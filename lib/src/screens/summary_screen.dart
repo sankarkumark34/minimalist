@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 
+import '../channel.dart';
 import '../glass.dart';
 import '../theme.dart';
 
@@ -83,7 +84,10 @@ class SummaryScreen extends StatelessWidget {
               GlossyButton(
                 label: 'Done',
                 height: 56,
-                onPressed: () => context.go('/'),
+                onPressed: () {
+                  FocusChannel.stopAlarmSound();
+                  context.go('/');
+                },
               ),
               const SizedBox(height: 32),
             ],

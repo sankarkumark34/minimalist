@@ -10,10 +10,210 @@ import '../theme.dart';
 
 const _durations = [10, 15, 25, 45, 60, 90, 120];
 
-class HomeScreen extends ConsumerWidget {
+String _fmtDuration(int minutes) {
+  if (minutes < 60) return '$minutes';
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  return m == 0 ? '${h}h' : '${h}h ${m}m';
+}
+
+Future<void> _pickCustom(
+    BuildContext context, WidgetRef ref, int current) async {
+  var hours = (current ~/ 60).clamp(0, 24);
+  var mins = current % 60;
+  final picked = await showModalBottomSheet<int>(
+    context: context,
+    backgroundColor: const Color(0xF0141728),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      side: BorderSide(color: AppColors.glassBorder),
+    ),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSheet) {
+        final total = (hours * 60 + mins).clamp(0, 1440);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Custom duration',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.ink)),
+              const SizedBox(height: 8),
+              Text(
+                total > 90
+                    ? 'Sessions over 1.5h can be ended early.'
+                    : 'Sessions up to 1.5h are locked until the timer ends.',
+                style: const TextStyle(fontSize: 13, color: AppColors.inkDim),
+              ),
+              const SizedBox(height: 20),
+              Text(total == 0 ? '0' : _fmtDuration(total),
+                  style: const TextStyle(
+                      fontSize: 44,
+                      fontWeight: FontWeight.w200,
+                      color: AppColors.accentBright)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const SizedBox(
+                      width: 64,
+                      child: Text('Hours',
+                          style: TextStyle(color: AppColors.inkDim))),
+                  Expanded(
+                    child: Slider(
+                      value: hours.toDouble(),
+                      min: 0,
+                      max: 24,
+                      divisions: 24,
+                      activeColor: AppColors.accent,
+                      inactiveColor: AppColors.glassBorder,
+                      label: '${hours}h',
+                      onChanged: (v) => setSheet(() => hours = v.round()),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  const SizedBox(
+                      width: 64,
+                      child: Text('Minutes',
+                          style: TextStyle(color: AppColors.inkDim))),
+                  Expanded(
+                    child: Slider(
+                      value: mins.toDouble(),
+                      min: 0,
+                      max: 55,
+                      divisions: 11,
+                      activeColor: AppColors.accent,
+                      inactiveColor: AppColors.glassBorder,
+                      label: '${mins}m',
+                      onChanged: (v) => setSheet(() => mins = v.round()),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              GlossyButton(
+                label: total == 0
+                    ? 'Pick a duration'
+                    : 'Set ${_fmtDuration(total)}',
+                height: 52,
+                onPressed:
+                    total == 0 ? () {} : () => Navigator.pop(ctx, total),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+  if (picked != null && picked > 0) {
+    ref.read(durationProvider.notifier).set(picked);
+  }
+}
+
+
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  String? _alarmName;
+
+  @override
+  void initState() {
+    super.initState();
+    FocusChannel.getAlarmSound().then((name) {
+      if (mounted) setState(() => _alarmName = name);
+    });
+    // If a session is already running (app relaunched, or user backed out),
+    // jump straight to it — a live session can never be overwritten.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _resumeIfActive());
+  }
+
+  /// Returns true if an active session was found (and we navigated to it).
+  Future<bool> _resumeIfActive() async {
+    try {
+      final state = await FocusChannel.getSessionState();
+      if (state['active'] == true) {
+        final endTime = DateTime.fromMillisecondsSinceEpoch(
+            (state['endTimeMillis'] as num).toInt());
+        if (endTime.isAfter(DateTime.now()) && mounted) {
+          context.go('/session', extra: {
+            'endTime': endTime,
+            'durationMinutes':
+                (state['durationMinutes'] as num?)?.toInt() ?? 25,
+            'blockedCount': (state['blockedCount'] as num?)?.toInt() ?? 0,
+          });
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  Future<void> _pickSound() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xF0141728),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        side: BorderSide(color: AppColors.glassBorder),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 20, 24, 8),
+              child: Text('Completion sound',
+                  style: TextStyle(fontSize: 18, color: AppColors.ink)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.library_music,
+                  color: AppColors.accent),
+              title: const Text('Choose an audio file',
+                  style: TextStyle(color: AppColors.ink)),
+              subtitle: const Text('MP3 or any audio on this device',
+                  style: TextStyle(color: AppColors.inkDim, fontSize: 12)),
+              onTap: () => Navigator.pop(ctx, 'pick'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.alarm, color: AppColors.inkDim),
+              title: const Text('Use default alarm',
+                  style: TextStyle(color: AppColors.ink)),
+              onTap: () => Navigator.pop(ctx, 'default'),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+    if (choice == 'pick') {
+      final name = await FocusChannel.pickAlarmSound();
+      if (name != null && mounted) setState(() => _alarmName = name);
+    } else if (choice == 'default') {
+      await FocusChannel.clearAlarmSound();
+      if (mounted) setState(() => _alarmName = null);
+    }
+  }
+
   Future<void> _start(BuildContext context, WidgetRef ref) async {
+    // Guard: never start (or overwrite) while a session is already active.
+    if (await _resumeIfActive()) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('A focus session is already running')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
     final perms = await FocusChannel.checkPermissions();
     if (perms['accessibility'] != true) {
       if (!context.mounted) return;
@@ -73,7 +273,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final minutes = ref.watch(durationProvider);
     final blocked = ref.watch(blockedAppsProvider);
     final history = ref.watch(historyProvider);
@@ -116,17 +316,17 @@ class HomeScreen extends ConsumerWidget {
                           end: Alignment.bottomCenter,
                           colors: [Colors.white, AppColors.accentBright],
                         ).createShader(bounds),
-                        child: Text('$minutes',
-                                style: const TextStyle(
-                                    fontSize: 96,
+                        child: Text(_fmtDuration(minutes),
+                                style: TextStyle(
+                                    fontSize: minutes >= 60 ? 64 : 96,
                                     fontWeight: FontWeight.w200,
                                     height: 1,
                                     color: Colors.white))
                             .animate(key: ValueKey(minutes))
                             .fadeIn(duration: 200.ms),
                       ),
-                      const Text('minutes',
-                          style: TextStyle(
+                      Text(minutes >= 60 ? 'duration' : 'minutes',
+                          style: const TextStyle(
                               fontSize: 14,
                               letterSpacing: 3,
                               color: AppColors.inkDim)),
@@ -143,6 +343,10 @@ class HomeScreen extends ConsumerWidget {
                               onTap: () =>
                                   ref.read(durationProvider.notifier).set(d),
                             ),
+                          _CustomChip(
+                            selected: !_durations.contains(minutes),
+                            onTap: () => _pickCustom(context, ref, minutes),
+                          ),
                         ],
                       ),
                     ],
@@ -164,6 +368,33 @@ class HomeScreen extends ConsumerWidget {
                         blocked.isEmpty
                             ? 'Choose apps to block'
                             : '${blocked.length} app${blocked.length == 1 ? '' : 's'} blocked',
+                        style: const TextStyle(
+                            fontSize: 15, color: AppColors.ink),
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right,
+                        size: 20, color: AppColors.inkFaint),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              GlassPanel(
+                radius: 18,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                onTap: _pickSound,
+                child: Row(
+                  children: [
+                    const Icon(Icons.music_note,
+                        size: 20, color: AppColors.inkDim),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        _alarmName == null
+                            ? 'Completion sound: default alarm'
+                            : 'Completion sound: $_alarmName',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontSize: 15, color: AppColors.ink),
                       ),
@@ -251,6 +482,54 @@ class _DurationChip extends StatelessWidget {
             style: TextStyle(
                 color: selected ? AppColors.bgBottom : AppColors.inkDim,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w400)),
+      ),
+    );
+  }
+}
+
+class _CustomChip extends StatelessWidget {
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CustomChip({required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: selected
+              ? const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [AppColors.accentBright, AppColors.accentDeep],
+                )
+              : const LinearGradient(
+                  colors: [AppColors.glassFill, AppColors.glassFill]),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? AppColors.accentBright.withAlpha(153)
+                : AppColors.glassBorder,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.tune,
+                size: 15,
+                color: selected ? AppColors.bgBottom : AppColors.inkDim),
+            const SizedBox(width: 6),
+            Text('Custom',
+                style: TextStyle(
+                    color: selected ? AppColors.bgBottom : AppColors.inkDim,
+                    fontWeight:
+                        selected ? FontWeight.w600 : FontWeight.w400)),
+          ],
+        ),
       ),
     );
   }

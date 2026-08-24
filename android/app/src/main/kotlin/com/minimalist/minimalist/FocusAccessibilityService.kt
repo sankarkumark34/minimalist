@@ -40,23 +40,103 @@ class FocusAccessibilityService : AccessibilityService() {
         }
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        val pkg = event.packageName?.toString() ?: return
+    private val autoHide = Runnable {
+        autoHidePending = false
+        hideOverlay()
+    }
 
+    /** Strict multi-window sweep: split-screen, floating windows and PiP
+     *  all appear in [windows]; any blocked package visible => block. */
+    private val monitor = object : Runnable {
+        override fun run() {
+            if (SessionStore.isActive(this@FocusAccessibilityService)) {
+                if (scanWindowsForBlocked()) {
+                    showOverlay()
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                } else if (overlay != null && handlerHasNoAutoHide()) {
+                    hideOverlay()
+                }
+            } else {
+                hideOverlay()
+            }
+            handler.postDelayed(this, 1500L)
+        }
+    }
+
+    private var autoHidePending = false
+
+    private fun handlerHasNoAutoHide(): Boolean = !autoHidePending
+
+    private fun scanWindowsForBlocked(): Boolean {
+        val blocked = SessionStore.blockedPackages(this)
+        if (blocked.isEmpty()) return false
+        return try {
+            windows.any { w ->
+                val pkg = w.root?.packageName?.toString()
+                pkg != null && pkg != packageName && blocked.contains(pkg)
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        handler.removeCallbacks(monitor)
+        handler.post(monitor)
+    }
+
+    private var launcherPkg: String? = null
+
+    private fun isLauncher(pkg: String): Boolean {
+        if (launcherPkg == null) {
+            val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                .addCategory(android.content.Intent.CATEGORY_HOME)
+            launcherPkg = packageManager.resolveActivity(intent, 0)
+                ?.activityInfo?.packageName ?: ""
+        }
+        return pkg == launcherPkg
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (!SessionStore.isActive(this)) {
             hideOverlay()
             return
         }
 
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            // A window appeared/moved/resized (split-screen, floating, PiP):
+            // sweep everything visible right now.
+            if (scanWindowsForBlocked()) {
+                showOverlay()
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                scheduleAutoHide()
+            }
+            return
+        }
+
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val pkg = event.packageName?.toString() ?: return
+
         // Ignore our own windows (including the overlay itself) and system UI.
         if (pkg == packageName || pkg == "com.android.systemui") return
 
-        if (SessionStore.blockedPackages(this).contains(pkg)) {
+        if (SessionStore.blockedPackages(this).contains(pkg) || scanWindowsForBlocked()) {
+            // Strict mode: show the block screen AND immediately kick the
+            // user back to the launcher — the blocked app is never usable,
+            // at any window size.
             showOverlay()
-        } else {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            scheduleAutoHide()
+        } else if (!isLauncher(pkg)) {
             hideOverlay()
         }
+    }
+
+    private fun scheduleAutoHide() {
+        autoHidePending = true
+        handler.removeCallbacks(autoHide)
+        handler.postDelayed(autoHide, 2500L)
     }
 
     override fun onInterrupt() {
@@ -64,6 +144,7 @@ class FocusAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(monitor)
         hideOverlay()
         super.onDestroy()
     }
@@ -182,6 +263,8 @@ class FocusAccessibilityService : AccessibilityService() {
 
     private fun hideOverlay() {
         handler.removeCallbacks(ticker)
+        handler.removeCallbacks(autoHide)
+        autoHidePending = false
         overlay?.let {
             try {
                 (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it)

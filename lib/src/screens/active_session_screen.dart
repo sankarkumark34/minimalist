@@ -73,6 +73,47 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     super.dispose();
   }
 
+  Future<void> _endEarly() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xF01A1D2E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: AppColors.glassBorder),
+        ),
+        title: const Text('End session early?'),
+        content: const Text(
+            'Your apps will be unblocked now. This session will be '
+            'recorded as unfinished.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep focusing',
+                  style: TextStyle(color: AppColors.accent))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('End now',
+                  style: TextStyle(color: AppColors.danger))),
+        ],
+      ),
+    );
+    if (confirm != true || _finished) return;
+    _finished = true;
+    _timer?.cancel();
+    await FocusChannel.stopFocusSession();
+    final elapsed = Duration(minutes: widget.durationMinutes) - _remaining;
+    saveSessionRecord(SessionRecord(
+      start:
+          widget.endTime.subtract(Duration(minutes: widget.durationMinutes)),
+      durationMinutes: elapsed.inMinutes.clamp(0, widget.durationMinutes),
+      blockedCount: widget.blockedCount,
+      completed: false,
+    ));
+    if (!mounted) return;
+    context.go('/');
+  }
+
   String _fmt(Duration d) {
     final h = d.inHours;
     final m = d.inMinutes % 60;
@@ -209,11 +250,19 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text('The only way out is through.',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic,
-                        color: AppColors.inkFaint)),
+                if (widget.durationMinutes > 90)
+                  TextButton(
+                    onPressed: _endEarly,
+                    child: const Text('End session early',
+                        style: TextStyle(
+                            fontSize: 13, color: AppColors.inkFaint)),
+                  )
+                else
+                  const Text('The only way out is through.',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontStyle: FontStyle.italic,
+                          color: AppColors.inkFaint)),
               ],
             ),
           ),

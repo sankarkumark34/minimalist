@@ -37,6 +37,25 @@ class FocusChannel {
         'blockedPackages': blockedPackages,
       });
 
+  /// Ends the session early (only offered for sessions over 90 minutes).
+  static Future<void> stopFocusSession() =>
+      _channel.invokeMethod('stopFocusSession');
+
+  /// Opens the system audio picker; returns the chosen file's display
+  /// name, or null if cancelled.
+  static Future<String?> pickAlarmSound() =>
+      _channel.invokeMethod<String>('pickAlarmSound');
+
+  /// Currently chosen completion sound name, or null for the default alarm.
+  static Future<String?> getAlarmSound() =>
+      _channel.invokeMethod<String>('getAlarmSound');
+
+  static Future<void> clearAlarmSound() =>
+      _channel.invokeMethod('clearAlarmSound');
+
+  static Future<void> stopAlarmSound() =>
+      _channel.invokeMethod('stopAlarmSound');
+
   /// {active: bool, endTimeMillis: int, blockedCount: int}
   static Future<Map<String, dynamic>> getSessionState() async {
     final raw =
