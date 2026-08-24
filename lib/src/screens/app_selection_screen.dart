@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,6 +24,7 @@ class _AppSelectionScreenState extends ConsumerState<AppSelectionScreen> {
     final blocked = ref.watch(blockedAppsProvider);
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Block apps',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w400)),
@@ -44,21 +47,33 @@ class _AppSelectionScreenState extends ConsumerState<AppSelectionScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-            child: TextField(
-              onChanged: (v) => setState(() => _query = v),
-              style: const TextStyle(color: AppColors.ink),
-              decoration: InputDecoration(
-                hintText: 'Search apps',
-                hintStyle: const TextStyle(color: AppColors.inkFaint),
-                prefixIcon:
-                    const Icon(Icons.search, color: AppColors.inkFaint),
-                filled: true,
-                fillColor: AppColors.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                child: TextField(
+                  onChanged: (v) => setState(() => _query = v),
+                  style: const TextStyle(color: AppColors.ink),
+                  decoration: InputDecoration(
+                    hintText: 'Search apps',
+                    hintStyle: const TextStyle(color: AppColors.inkFaint),
+                    prefixIcon:
+                        const Icon(Icons.search, color: AppColors.inkFaint),
+                    filled: true,
+                    fillColor: AppColors.glassFill,
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide:
+                          const BorderSide(color: AppColors.glassBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(
+                          color: AppColors.accent.withAlpha(140)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
                 ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
             ),
           ),
@@ -79,9 +94,12 @@ class _AppSelectionScreenState extends ConsumerState<AppSelectionScreen> {
                             .contains(_query.toLowerCase()))
                         .toList();
                 return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                   itemCount: filtered.length,
-                  itemBuilder: (_, i) =>
-                      _AppRow(app: filtered[i], blocked: blocked),
+                  itemBuilder: (_, i) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _AppRow(app: filtered[i], blocked: blocked),
+                  ),
                 );
               },
             ),
@@ -101,32 +119,65 @@ class _AppRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isBlocked = blocked.contains(app.package_);
-    return ListTile(
-      leading: app.icon != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.memory(app.icon!,
-                  width: 40, height: 40, gaplessPlayback: true),
-            )
-          : Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceHigh,
-                borderRadius: BorderRadius.circular(10),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isBlocked
+              ? [AppColors.accent.withAlpha(31), AppColors.glassFill]
+              : [AppColors.glassFill, const Color(0x0AFFFFFF)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isBlocked
+              ? AppColors.accent.withAlpha(89)
+              : AppColors.glassBorder,
+        ),
+      ),
+      child: ListTile(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        leading: app.icon != null
+            ? Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(77),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.memory(app.icon!,
+                      width: 40, height: 40, gaplessPlayback: true),
+                ),
+              )
+            : Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.glassFillHigh,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.glassBorder),
+                ),
+                child: const Icon(Icons.android,
+                    size: 22, color: AppColors.inkFaint),
               ),
-              child: const Icon(Icons.android,
-                  size: 22, color: AppColors.inkFaint),
-            ),
-      title: Text(app.name,
-          style: const TextStyle(fontSize: 15, color: AppColors.ink)),
-      trailing: Switch(
-        value: isBlocked,
-        onChanged: (_) =>
+        title: Text(app.name,
+            style: const TextStyle(fontSize: 15, color: AppColors.ink)),
+        trailing: Switch(
+          value: isBlocked,
+          onChanged: (_) =>
+              ref.read(blockedAppsProvider.notifier).toggle(app.package_),
+        ),
+        onTap: () =>
             ref.read(blockedAppsProvider.notifier).toggle(app.package_),
       ),
-      onTap: () =>
-          ref.read(blockedAppsProvider.notifier).toggle(app.package_),
     );
   }
 }

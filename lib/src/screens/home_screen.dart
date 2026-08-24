@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../channel.dart';
+import '../glass.dart';
 import '../providers.dart';
 import '../theme.dart';
 
@@ -19,7 +20,11 @@ class HomeScreen extends ConsumerWidget {
       final go = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.surface,
+          backgroundColor: const Color(0xF01A1D2E),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: AppColors.glassBorder),
+          ),
           title: const Text('One-time setup'),
           content: const Text(
             'minimalist needs the Accessibility permission to detect and '
@@ -29,8 +34,12 @@ class HomeScreen extends ConsumerWidget {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Not now')),
+                child: const Text('Not now',
+                    style: TextStyle(color: AppColors.inkDim))),
             FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    foregroundColor: AppColors.bgBottom),
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text('Open settings')),
           ],
@@ -73,88 +82,121 @@ class HomeScreen extends ConsumerWidget {
         .fold<int>(0, (sum, r) => sum + r.durationMinutes);
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 32),
-              const Text('minimalist',
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w300,
-                      letterSpacing: 4,
-                      color: AppColors.inkDim)),
+              ShaderMask(
+                shaderCallback: (bounds) => const LinearGradient(
+                  colors: [AppColors.ink, AppColors.inkDim],
+                ).createShader(bounds),
+                child: const Text('minimalist',
+                    style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w300,
+                        letterSpacing: 4,
+                        color: Colors.white)),
+              ),
               const Spacer(),
               Center(
-                child: Column(
+                child: GlassPanel(
+                  radius: 32,
+                  high: true,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+                  child: Column(
+                    children: [
+                      ShaderMask(
+                        shaderCallback: (bounds) => const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.white, AppColors.accentBright],
+                        ).createShader(bounds),
+                        child: Text('$minutes',
+                                style: const TextStyle(
+                                    fontSize: 96,
+                                    fontWeight: FontWeight.w200,
+                                    height: 1,
+                                    color: Colors.white))
+                            .animate(key: ValueKey(minutes))
+                            .fadeIn(duration: 200.ms),
+                      ),
+                      const Text('minutes',
+                          style: TextStyle(
+                              fontSize: 14,
+                              letterSpacing: 3,
+                              color: AppColors.inkDim)),
+                      const SizedBox(height: 28),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          for (final d in _durations)
+                            _DurationChip(
+                              minutes: d,
+                              selected: d == minutes,
+                              onTap: () =>
+                                  ref.read(durationProvider.notifier).set(d),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const Spacer(),
+              GlassPanel(
+                radius: 18,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                onTap: () => context.push('/apps'),
+                child: Row(
                   children: [
-                    Text('$minutes',
-                            style: const TextStyle(
-                                fontSize: 96,
-                                fontWeight: FontWeight.w200,
-                                height: 1,
-                                color: AppColors.ink))
-                        .animate(key: ValueKey(minutes))
-                        .fadeIn(duration: 200.ms),
-                    const Text('minutes',
-                        style: TextStyle(
-                            fontSize: 14,
-                            letterSpacing: 3,
-                            color: AppColors.inkDim)),
-                    const SizedBox(height: 32),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        for (final d in _durations)
-                          _DurationChip(
-                            minutes: d,
-                            selected: d == minutes,
-                            onTap: () =>
-                                ref.read(durationProvider.notifier).set(d),
-                          ),
-                      ],
+                    const Icon(Icons.block, size: 20, color: AppColors.accent),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        blocked.isEmpty
+                            ? 'Choose apps to block'
+                            : '${blocked.length} app${blocked.length == 1 ? '' : 's'} blocked',
+                        style: const TextStyle(
+                            fontSize: 15, color: AppColors.ink),
+                      ),
                     ),
+                    const Icon(Icons.chevron_right,
+                        size: 20, color: AppColors.inkFaint),
                   ],
                 ),
               ),
-              const Spacer(),
-              _RowTile(
-                icon: Icons.block,
-                label: blocked.isEmpty
-                    ? 'Choose apps to block'
-                    : '${blocked.length} app${blocked.length == 1 ? '' : 's'} blocked',
-                onTap: () => context.push('/apps'),
-              ),
               if (totalFocused > 0) ...[
-                const SizedBox(height: 8),
-                _RowTile(
-                  icon: Icons.self_improvement,
-                  label:
-                      '${(totalFocused / 60).floor()}h ${totalFocused % 60}m focused all-time',
+                const SizedBox(height: 10),
+                GlassPanel(
+                  radius: 18,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.self_improvement,
+                          size: 20, color: AppColors.inkDim),
+                      const SizedBox(width: 14),
+                      Text(
+                        '${(totalFocused / 60).floor()}h ${totalFocused % 60}m focused all-time',
+                        style: const TextStyle(
+                            fontSize: 15, color: AppColors.ink),
+                      ),
+                    ],
+                  ),
                 ),
               ],
               const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 60,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    foregroundColor: AppColors.bg,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30)),
-                  ),
-                  onPressed: () => _start(context, ref),
-                  child: const Text('Begin Focus',
-                      style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1)),
-                ),
+              GlossyButton(
+                label: 'Begin Focus',
+                onPressed: () => _start(context, ref),
               ),
               const SizedBox(height: 32),
             ],
@@ -181,49 +223,34 @@ class _DurationChip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? AppColors.accent : AppColors.surface,
+          gradient: selected
+              ? const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [AppColors.accentBright, AppColors.accentDeep],
+                )
+              : const LinearGradient(
+                  colors: [AppColors.glassFill, AppColors.glassFill]),
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? AppColors.accentBright.withAlpha(153)
+                : AppColors.glassBorder,
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: AppColors.accent.withAlpha(64),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
         ),
         child: Text('$minutes',
             style: TextStyle(
-                color: selected ? AppColors.bg : AppColors.inkDim,
+                color: selected ? AppColors.bgBottom : AppColors.inkDim,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w400)),
-      ),
-    );
-  }
-}
-
-class _RowTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
-  const _RowTile({required this.icon, required this.label, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          child: Row(
-            children: [
-              Icon(icon, size: 20, color: AppColors.inkDim),
-              const SizedBox(width: 14),
-              Expanded(
-                  child: Text(label,
-                      style:
-                          const TextStyle(fontSize: 15, color: AppColors.ink))),
-              if (onTap != null)
-                const Icon(Icons.chevron_right,
-                    size: 20, color: AppColors.inkFaint),
-            ],
-          ),
-        ),
       ),
     );
   }
