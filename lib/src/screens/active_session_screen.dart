@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../channel.dart';
+import '../glass.dart';
 import '../models.dart';
 import '../providers.dart';
 import '../theme.dart';
@@ -45,7 +47,6 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       _timer?.cancel();
       if (_finished) return;
       _finished = true;
-      // Confirm with native side; it clears state on its own timer too.
       try {
         await FocusChannel.getSessionState();
       } catch (_) {}
@@ -72,6 +73,47 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     super.dispose();
   }
 
+  Future<void> _endEarly() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xF01A1D2E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: AppColors.glassBorder),
+        ),
+        title: const Text('End session early?'),
+        content: const Text(
+            'Your apps will be unblocked now. This session will be '
+            'recorded as unfinished.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep focusing',
+                  style: TextStyle(color: AppColors.accent))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('End now',
+                  style: TextStyle(color: AppColors.danger))),
+        ],
+      ),
+    );
+    if (confirm != true || _finished) return;
+    _finished = true;
+    _timer?.cancel();
+    await FocusChannel.stopFocusSession();
+    final elapsed = Duration(minutes: widget.durationMinutes) - _remaining;
+    saveSessionRecord(SessionRecord(
+      start:
+          widget.endTime.subtract(Duration(minutes: widget.durationMinutes)),
+      durationMinutes: elapsed.inMinutes.clamp(0, widget.durationMinutes),
+      blockedCount: widget.blockedCount,
+      completed: false,
+    ));
+    if (!mounted) return;
+    context.go('/');
+  }
+
   String _fmt(Duration d) {
     final h = d.inHours;
     final m = d.inMinutes % 60;
@@ -90,6 +132,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     return PopScope(
       canPop: false, // no way out but the timer — by design (MVP)
       child: Scaffold(
+        backgroundColor: Colors.transparent,
         body: SafeArea(
           child: Center(
             child: Column(
@@ -104,45 +147,122 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                     .fadeIn(duration: 1500.ms)
                     .then()
                     .fade(begin: 1, end: 0.4, duration: 1500.ms),
-                const SizedBox(height: 48),
-                SizedBox(
-                  width: 260,
-                  height: 260,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      SizedBox(
-                        width: 260,
-                        height: 260,
-                        child: CircularProgressIndicator(
-                          value: progress,
-                          strokeWidth: 3,
-                          backgroundColor: AppColors.surfaceHigh,
-                          color: AppColors.accent,
-                          strokeCap: StrokeCap.round,
-                        ),
+                const SizedBox(height: 44),
+                // Glass timer medallion: frosted disc + glowing gold ring.
+                Container(
+                  width: 292,
+                  height: 292,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.accent.withAlpha(46),
+                        blurRadius: 60,
+                        spreadRadius: 4,
                       ),
-                      Text(_fmt(_remaining),
-                          style: const TextStyle(
-                              fontSize: 52,
-                              fontWeight: FontWeight.w200,
-                              color: AppColors.ink,
-                              fontFeatures: [FontFeature.tabularFigures()])),
                     ],
                   ),
+                  child: ClipOval(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              AppColors.glassFillHigh,
+                              AppColors.glassFill
+                            ],
+                          ),
+                          border:
+                              Border.all(color: AppColors.glassBorder),
+                        ),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Specular arc on the upper-left of the disc
+                            Positioned(
+                              top: 14,
+                              left: 40,
+                              right: 40,
+                              child: Container(
+                                height: 60,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(80),
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.white.withAlpha(31),
+                                      Colors.white.withAlpha(0),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 260,
+                              height: 260,
+                              child: CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: 4,
+                                backgroundColor: AppColors.glassBorder,
+                                color: AppColors.accent,
+                                strokeCap: StrokeCap.round,
+                              ),
+                            ),
+                            ShaderMask(
+                              shaderCallback: (bounds) =>
+                                  const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.white,
+                                  AppColors.accentBright
+                                ],
+                              ).createShader(bounds),
+                              child: Text(_fmt(_remaining),
+                                  style: const TextStyle(
+                                      fontSize: 52,
+                                      fontWeight: FontWeight.w200,
+                                      color: Colors.white,
+                                      fontFeatures: [
+                                        FontFeature.tabularFigures()
+                                      ])),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 48),
-                Text(
-                  '${widget.blockedCount} app${widget.blockedCount == 1 ? '' : 's'} blocked',
-                  style:
-                      const TextStyle(fontSize: 14, color: AppColors.inkDim),
+                const SizedBox(height: 44),
+                GlassPanel(
+                  radius: 16,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 12),
+                  child: Text(
+                    '${widget.blockedCount} app${widget.blockedCount == 1 ? '' : 's'} blocked',
+                    style: const TextStyle(
+                        fontSize: 14, color: AppColors.inkDim),
+                  ),
                 ),
-                const SizedBox(height: 12),
-                const Text('The only way out is through.',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic,
-                        color: AppColors.inkFaint)),
+                const SizedBox(height: 16),
+                if (widget.durationMinutes > 90)
+                  TextButton(
+                    onPressed: _endEarly,
+                    child: const Text('End session early',
+                        style: TextStyle(
+                            fontSize: 13, color: AppColors.inkFaint)),
+                  )
+                else
+                  const Text('The only way out is through.',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontStyle: FontStyle.italic,
+                          color: AppColors.inkFaint)),
               ],
             ),
           ),

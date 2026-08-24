@@ -1,17 +1,39 @@
 # minimalist
 
-A new Flutter project.
+A study-focused Focus Mode app for Android. Offline-first — no login, no backend, no data ever leaves the device.
 
-## Getting Started
+Pick a duration, choose which apps to block, and begin. Opening a blocked app during a session shows a full-screen focus overlay with a live countdown. The only way out is the timer expiring.
 
-This project is a starting point for a Flutter application.
+## Architecture
 
-A few resources to get you started if this is your first Flutter project:
+- **Flutter (Dart)** — UI: home / duration picker, app selection, active session, summary. State via Riverpod, persistence via Hive.
+- **Kotlin (native Android)** — the focus engine, bridged over a `MethodChannel` (`minimalist/focus`):
+  - [FocusAccessibilityService.kt](android/app/src/main/kotlin/com/minimalist/minimalist/FocusAccessibilityService.kt) — detects foreground app changes; draws a `TYPE_ACCESSIBILITY_OVERLAY` block screen over blocked apps (no `SYSTEM_ALERT_WINDOW` permission needed).
+  - [FocusForegroundService.kt](android/app/src/main/kotlin/com/minimalist/minimalist/FocusForegroundService.kt) — keeps the session timer alive in the background with an ongoing notification; ends the session and notifies on completion.
+  - [SessionStore.kt](android/app/src/main/kotlin/com/minimalist/minimalist/SessionStore.kt) — SharedPreferences-backed session state shared by all components.
+  - [MainActivity.kt](android/app/src/main/kotlin/com/minimalist/minimalist/MainActivity.kt) — MethodChannel handler: installed-app listing (with icons), permission checks, session start.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Permissions
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+| Permission | Why | How granted |
+|---|---|---|
+| Accessibility service | Detect when a blocked app opens; draw the block overlay | User enables in Settings (app guides them) |
+| `POST_NOTIFICATIONS` | Session timer + completion notification | Runtime prompt (Android 13+) |
+| `FOREGROUND_SERVICE_SPECIAL_USE` | Keep the timer running with screen off | Manifest |
+
+No usage-access permission, no internet permission, no analytics.
+
+## Build
+
+Requires Flutter 3.44+ and a JDK 17–21 for Gradle (JDK 26 breaks AGP's `jlink` transform — `android/gradle.properties` pins `org.gradle.java.home`; adjust the path for your machine).
+
+```
+flutter pub get
+flutter build apk --release
+```
+
+minSdk 26 (Android 8.0+), Android only. iOS is out of scope — true app blocking is not feasible there without Apple entitlements.
+
+## Status
+
+Phase 1 MVP per the project plan: duration picker, app block list with search, native blocking engine, live countdown, session summary, local history. Emergency break is deliberately absent — deferred to Phase 2.

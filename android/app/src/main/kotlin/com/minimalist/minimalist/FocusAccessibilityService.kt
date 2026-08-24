@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -18,8 +19,9 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Core blocker. Listens for window changes; when a blocked app comes to the
- * foreground during an active session, draws a full-screen accessibility
- * overlay with a live countdown and a "return to focus" action.
+ * foreground during an active session, draws a full-screen liquid-glass
+ * overlay — blurred backdrop (Android 12+), frosted card, glossy gold
+ * button — with a live countdown.
  */
 class FocusAccessibilityService : AccessibilityService() {
 
@@ -38,23 +40,106 @@ class FocusAccessibilityService : AccessibilityService() {
         }
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        val pkg = event.packageName?.toString() ?: return
+    private val autoHide = Runnable {
+        autoHidePending = false
+        hideOverlay()
+    }
 
+    /** Strict multi-window sweep: split-screen, floating windows and PiP
+     *  all appear in [windows]; any blocked package visible => block. */
+    private val monitor = object : Runnable {
+        override fun run() {
+            if (SessionStore.isActive(this@FocusAccessibilityService)) {
+                if (scanWindowsForBlocked()) {
+                    showOverlay()
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                } else if (overlay != null && handlerHasNoAutoHide()) {
+                    hideOverlay()
+                }
+                // Active session: tight 500ms sweep for sub-second worst case.
+                handler.postDelayed(this, 500L)
+            } else {
+                hideOverlay()
+                // No session: relax to 2s — near-zero battery cost while idle.
+                handler.postDelayed(this, 2000L)
+            }
+        }
+    }
+
+    private var autoHidePending = false
+
+    private fun handlerHasNoAutoHide(): Boolean = !autoHidePending
+
+    private fun scanWindowsForBlocked(): Boolean {
+        val blocked = SessionStore.blockedPackages(this)
+        if (blocked.isEmpty()) return false
+        return try {
+            windows.any { w ->
+                val pkg = w.root?.packageName?.toString()
+                pkg != null && pkg != packageName && blocked.contains(pkg)
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        handler.removeCallbacks(monitor)
+        handler.post(monitor)
+    }
+
+    private var launcherPkg: String? = null
+
+    private fun isLauncher(pkg: String): Boolean {
+        if (launcherPkg == null) {
+            val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                .addCategory(android.content.Intent.CATEGORY_HOME)
+            launcherPkg = packageManager.resolveActivity(intent, 0)
+                ?.activityInfo?.packageName ?: ""
+        }
+        return pkg == launcherPkg
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (!SessionStore.isActive(this)) {
             hideOverlay()
             return
         }
 
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            // A window appeared/moved/resized (split-screen, floating, PiP):
+            // sweep everything visible right now.
+            if (scanWindowsForBlocked()) {
+                showOverlay()
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                scheduleAutoHide()
+            }
+            return
+        }
+
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val pkg = event.packageName?.toString() ?: return
+
         // Ignore our own windows (including the overlay itself) and system UI.
         if (pkg == packageName || pkg == "com.android.systemui") return
 
-        if (SessionStore.blockedPackages(this).contains(pkg)) {
+        if (SessionStore.blockedPackages(this).contains(pkg) || scanWindowsForBlocked()) {
+            // Strict mode: show the block screen AND immediately kick the
+            // user back to the launcher — the blocked app is never usable,
+            // at any window size.
             showOverlay()
-        } else {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            scheduleAutoHide()
+        } else if (!isLauncher(pkg)) {
             hideOverlay()
         }
+    }
+
+    private fun scheduleAutoHide() {
+        autoHidePending = true
+        handler.removeCallbacks(autoHide)
+        handler.postDelayed(autoHide, 2500L)
     }
 
     override fun onInterrupt() {
@@ -62,6 +147,7 @@ class FocusAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(monitor)
         hideOverlay()
         super.onDestroy()
     }
@@ -70,17 +156,29 @@ class FocusAccessibilityService : AccessibilityService() {
         if (overlay != null) return
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        val root = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#0C0C0E")) }
+        // Scrim: deep translucent midnight; the window blur (S+) frosts
+        // whatever the blocked app was showing underneath.
+        val root = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#E60B0D18")) }
 
-        val column = LinearLayout(this).apply {
+        // Frosted glass card
+        val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(32), dp(40), dp(32), dp(40))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor("#1FFFFFFF"), Color.parseColor("#0AFFFFFF"))
+            ).apply {
+                cornerRadius = dp(28).toFloat()
+                setStroke(dp(1), Color.parseColor("#2EFFFFFF"))
+            }
+            clipToOutline = true
         }
 
         val title = TextView(this).apply {
             text = "Focus Mode Active"
             textSize = 24f
-            setTextColor(Color.parseColor("#EDEDEF"))
+            setTextColor(Color.parseColor("#F2F3F7"))
             typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
             gravity = Gravity.CENTER
         }
@@ -88,48 +186,61 @@ class FocusAccessibilityService : AccessibilityService() {
         val subtitle = TextView(this).apply {
             text = "This app is blocked until your session ends."
             textSize = 14f
-            setTextColor(Color.parseColor("#8A8A93"))
+            setTextColor(Color.parseColor("#9BA0B0"))
             gravity = Gravity.CENTER
-            setPadding(0, dp(12), 0, dp(36))
+            setPadding(0, dp(12), 0, dp(32))
         }
 
         countdownText = TextView(this).apply {
             text = formatRemaining(SessionStore.remainingMillis(this@FocusAccessibilityService))
             textSize = 56f
-            setTextColor(Color.parseColor("#E8C36A"))
+            setTextColor(Color.parseColor("#F6DFA0"))
             typeface = Typeface.create("sans-serif-thin", Typeface.NORMAL)
             gravity = Gravity.CENTER
-            setPadding(0, 0, 0, dp(48))
+            setPadding(0, 0, 0, dp(40))
+            setShadowLayer(24f, 0f, 0f, Color.parseColor("#66E8C36A"))
         }
 
+        // Glossy gold pill button
         val button = TextView(this).apply {
             text = "Return to focus"
             textSize = 16f
-            setTextColor(Color.parseColor("#0C0C0E"))
+            setTextColor(Color.parseColor("#07080F"))
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             gravity = Gravity.CENTER
             setPadding(dp(36), dp(16), dp(36), dp(16))
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#E8C36A"))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(
+                    Color.parseColor("#F6DFA0"),
+                    Color.parseColor("#E8C36A"),
+                    Color.parseColor("#C99B3F")
+                )
+            ).apply {
                 cornerRadius = dp(30).toFloat()
+                setStroke(dp(1), Color.parseColor("#8CF6DFA0"))
             }
+            elevation = dp(8).toFloat()
             setOnClickListener {
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 hideOverlay()
             }
         }
 
-        column.addView(title)
-        column.addView(subtitle)
-        column.addView(countdownText)
-        column.addView(button)
+        card.addView(title)
+        card.addView(subtitle)
+        card.addView(countdownText)
+        card.addView(button)
         root.addView(
-            column,
+            card,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER
-            )
+            ).apply {
+                marginStart = dp(24)
+                marginEnd = dp(24)
+            }
         )
 
         val params = WindowManager.LayoutParams(
@@ -137,8 +248,12 @@ class FocusAccessibilityService : AccessibilityService() {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.OPAQUE
+            PixelFormat.TRANSLUCENT
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+            params.blurBehindRadius = dp(24)
+        }
 
         try {
             wm.addView(root, params)
@@ -151,6 +266,8 @@ class FocusAccessibilityService : AccessibilityService() {
 
     private fun hideOverlay() {
         handler.removeCallbacks(ticker)
+        handler.removeCallbacks(autoHide)
+        autoHidePending = false
         overlay?.let {
             try {
                 (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it)

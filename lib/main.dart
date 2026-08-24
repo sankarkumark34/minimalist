@@ -28,6 +28,8 @@ class MinimalistApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       routerConfig: ref.watch(routerProvider),
+      builder: (context, child) =>
+          LiquidBackground(child: child ?? const SizedBox.shrink()),
     );
   }
 }

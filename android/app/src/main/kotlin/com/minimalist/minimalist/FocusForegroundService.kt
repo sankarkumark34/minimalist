@@ -86,6 +86,7 @@ class FocusForegroundService : Service() {
 
     private fun finishSession() {
         SessionStore.clear(this)
+        AlarmPlayer.play(this)
         notifyDone()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

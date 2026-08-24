@@ -26,6 +26,11 @@ class MainActivity : FlutterActivity() {
 
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingSoundResult: MethodChannel.Result? = null
+
+    companion object {
+        private const val REQUEST_PICK_AUDIO = 200
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -70,16 +75,77 @@ class MainActivity : FlutterActivity() {
                     FocusForegroundService.start(this)
                     result.success(null)
                 }
+                "stopFocusSession" -> {
+                    // Stop the service first (so its ticker can't fire a
+                    // "session complete" notification), then clear state.
+                    stopService(Intent(this, FocusForegroundService::class.java))
+                    SessionStore.clear(this)
+                    result.success(null)
+                }
+                "pickAlarmSound" -> {
+                    if (pendingSoundResult != null) {
+                        result.error("BUSY", "Picker already open", null)
+                    } else {
+                        pendingSoundResult = result
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "audio/*"
+                        }
+                        startActivityForResult(intent, REQUEST_PICK_AUDIO)
+                    }
+                }
+                "getAlarmSound" -> result.success(AlarmPlayer.soundName(this))
+                "clearAlarmSound" -> {
+                    AlarmPlayer.setSound(this, null, null)
+                    result.success(null)
+                }
+                "stopAlarmSound" -> {
+                    AlarmPlayer.stop()
+                    result.success(null)
+                }
                 "getSessionState" -> result.success(
                     mapOf(
                         "active" to SessionStore.isActive(this),
                         "endTimeMillis" to SessionStore.endTimeMillis(this),
-                        "blockedCount" to SessionStore.blockedPackages(this).size
+                        "blockedCount" to SessionStore.blockedPackages(this).size,
+                        "durationMinutes" to SessionStore.durationMinutes(this)
                     )
                 )
                 else -> result.notImplemented()
             }
         }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_PICK_AUDIO) return
+        val result = pendingSoundResult ?: return
+        pendingSoundResult = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null) {
+            result.success(null)
+            return
+        }
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: Exception) {
+        }
+        var name = uri.lastPathSegment ?: "Custom sound"
+        try {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(
+                    android.provider.OpenableColumns.DISPLAY_NAME
+                )
+                if (idx >= 0 && cursor.moveToFirst()) {
+                    name = cursor.getString(idx) ?: name
+                }
+            }
+        } catch (_: Exception) {
+        }
+        AlarmPlayer.setSound(this, uri.toString(), name)
+        result.success(name)
     }
 
     /** Launchable apps with base64 PNG icons, resolved off the main thread. */
