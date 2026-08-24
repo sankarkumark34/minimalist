@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">minimalist uses this permission only to detect when a blocked app is opened during a focus session, so it can show the focus screen. No data is collected or sent anywhere.</string>
+</resources>
