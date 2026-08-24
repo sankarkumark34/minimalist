@@ -479,6 +479,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 radius: 18,
                 padding:
                     const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                onTap: () => context.push('/limits'),
+                child: const Row(
+                  children: [
+                    Icon(Icons.hourglass_bottom,
+                        size: 20, color: AppColors.inkDim),
+                    SizedBox(width: 14),
+                    Expanded(
+                      child: Text('Daily app limits',
+                          style:
+                              TextStyle(fontSize: 15, color: AppColors.ink)),
+                    ),
+                    Icon(Icons.chevron_right,
+                        size: 20, color: AppColors.inkFaint),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              GlassPanel(
+                radius: 18,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
                 onTap: _pickSound,
                 child: Row(
                   children: [

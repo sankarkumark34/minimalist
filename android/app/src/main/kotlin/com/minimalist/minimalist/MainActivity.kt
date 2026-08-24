@@ -103,6 +103,21 @@ class MainActivity : FlutterActivity() {
                     AlarmPlayer.stop()
                     result.success(null)
                 }
+                "getAppLimits" -> result.success(AppLimitStore.all(this))
+                "setAppLimit" -> {
+                    val pkg = call.argument<String>("package")
+                    val minutes = call.argument<Int>("minutes")
+                    if (pkg != null && minutes != null && minutes > 0) {
+                        AppLimitStore.setLimit(this, pkg, minutes)
+                    }
+                    result.success(null)
+                }
+                "removeAppLimit" -> {
+                    call.argument<String>("package")?.let {
+                        AppLimitStore.removeLimit(this, it)
+                    }
+                    result.success(null)
+                }
                 "getSessionState" -> result.success(
                     mapOf(
                         "active" to SessionStore.isActive(this),
