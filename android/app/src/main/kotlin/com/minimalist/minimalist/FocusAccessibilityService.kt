@@ -56,10 +56,13 @@ class FocusAccessibilityService : AccessibilityService() {
                 } else if (overlay != null && handlerHasNoAutoHide()) {
                     hideOverlay()
                 }
+                // Active session: tight 500ms sweep for sub-second worst case.
+                handler.postDelayed(this, 500L)
             } else {
                 hideOverlay()
+                // No session: relax to 2s — near-zero battery cost while idle.
+                handler.postDelayed(this, 2000L)
             }
-            handler.postDelayed(this, 1500L)
         }
     }
 
