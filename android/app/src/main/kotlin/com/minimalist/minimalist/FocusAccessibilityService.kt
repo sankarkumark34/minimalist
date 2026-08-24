@@ -25,7 +25,27 @@ import java.util.concurrent.TimeUnit
  */
 class FocusAccessibilityService : AccessibilityService() {
 
+    companion object {
+        /** Locked while a session runs: uninstalling the app, disabling the
+         *  blocker, or force-stopping it mid-session is not possible. */
+        private val PROTECTED_PACKAGES = setOf(
+            "com.android.settings",                // AOSP / most OEM settings
+            "com.android.packageinstaller",        // uninstall dialogs (AOSP)
+            "com.google.android.packageinstaller", // uninstall dialogs (Pixel+)
+            "com.android.vending",                 // Play Store
+            "com.miui.securitycenter",             // Xiaomi security center
+            "com.samsung.android.lool",            // Samsung device care
+            "com.coloros.safecenter",              // Oppo security center
+            "com.iqoo.secure"                      // Vivo security center
+        )
+    }
+
+    private fun isRestricted(pkg: String): Boolean =
+        PROTECTED_PACKAGES.contains(pkg) ||
+            SessionStore.blockedPackages(this).contains(pkg)
+
     private var overlay: View? = null
+    private var protectedTrigger = false
     private var countdownText: TextView? = null
     private val handler = Handler(Looper.getMainLooper())
 
@@ -71,12 +91,10 @@ class FocusAccessibilityService : AccessibilityService() {
     private fun handlerHasNoAutoHide(): Boolean = !autoHidePending
 
     private fun scanWindowsForBlocked(): Boolean {
-        val blocked = SessionStore.blockedPackages(this)
-        if (blocked.isEmpty()) return false
         return try {
             windows.any { w ->
                 val pkg = w.root?.packageName?.toString()
-                pkg != null && pkg != packageName && blocked.contains(pkg)
+                pkg != null && pkg != packageName && isRestricted(pkg)
             }
         } catch (_: Exception) {
             false
@@ -124,10 +142,11 @@ class FocusAccessibilityService : AccessibilityService() {
         // Ignore our own windows (including the overlay itself) and system UI.
         if (pkg == packageName || pkg == "com.android.systemui") return
 
-        if (SessionStore.blockedPackages(this).contains(pkg) || scanWindowsForBlocked()) {
+        if (isRestricted(pkg) || scanWindowsForBlocked()) {
+            protectedTrigger = PROTECTED_PACKAGES.contains(pkg)
             // Strict mode: show the block screen AND immediately kick the
-            // user back to the launcher — the blocked app is never usable,
-            // at any window size.
+            // user back to the launcher — the blocked app (or a session-
+            // killing surface like Settings) is never usable, at any size.
             showOverlay()
             performGlobalAction(GLOBAL_ACTION_HOME)
             scheduleAutoHide()
@@ -184,7 +203,10 @@ class FocusAccessibilityService : AccessibilityService() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "This app is blocked until your session ends."
+            text = if (protectedTrigger)
+                "Settings, uninstalling and app stores are locked while focus is active."
+            else
+                "This app is blocked until your session ends."
             textSize = 14f
             setTextColor(Color.parseColor("#9BA0B0"))
             gravity = Gravity.CENTER
