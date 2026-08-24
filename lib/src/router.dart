@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'screens/active_session_screen.dart';
 import 'screens/app_selection_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/limits_screen.dart';
+import 'screens/stats_screen.dart';
 import 'screens/summary_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -12,6 +14,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/', builder: (_, _) => const HomeScreen()),
       GoRoute(path: '/apps', builder: (_, _) => const AppSelectionScreen()),
+      GoRoute(path: '/stats', builder: (_, _) => const StatsScreen()),
+      GoRoute(path: '/limits', builder: (_, _) => const LimitsScreen()),
       GoRoute(
         path: '/session',
         builder: (_, state) {

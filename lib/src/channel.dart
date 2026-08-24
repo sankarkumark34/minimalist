@@ -56,6 +56,21 @@ class FocusChannel {
   static Future<void> stopAlarmSound() =>
       _channel.invokeMethod('stopAlarmSound');
 
+  /// Daily app limits: [{package, limitMinutes, usedMinutes}]
+  static Future<List<Map<String, dynamic>>> getAppLimits() async {
+    final raw = await _channel.invokeListMethod<dynamic>('getAppLimits');
+    return (raw ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  static Future<void> setAppLimit(String package_, int minutes) =>
+      _channel.invokeMethod(
+          'setAppLimit', {'package': package_, 'minutes': minutes});
+
+  static Future<void> removeAppLimit(String package_) =>
+      _channel.invokeMethod('removeAppLimit', {'package': package_});
+
   /// {active: bool, endTimeMillis: int, blockedCount: int}
   static Future<Map<String, dynamic>> getSessionState() async {
     final raw =

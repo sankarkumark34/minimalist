@@ -1,6 +1,7 @@
 package com.minimalist.minimalist
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -8,6 +9,8 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -15,103 +18,138 @@ import android.view.accessibility.AccessibilityEvent
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 /**
- * Core blocker. Listens for window changes; when a blocked app comes to the
- * foreground during an active session, draws a full-screen liquid-glass
- * overlay — blurred backdrop (Android 12+), frosted card, glossy gold
- * button — with a live countdown.
+ * Core enforcement engine. Three jobs:
+ *  1. FOCUS — during a session, blocked apps bounce straight to the
+ *     launcher with a liquid-glass overlay (any window size: full-screen,
+ *     split-screen, floating, PiP).
+ *  2. PROTECTED — during a session, Settings / uninstall dialogs / app
+ *     stores are locked so the blocker can't be disabled or removed.
+ *  3. LIMIT — per-app daily time limits tracked 24/7; once today's
+ *     allowance is used, the app is soft-locked until midnight. Usage is
+ *     stored in this app's prefs keyed by package name, so uninstalling
+ *     and reinstalling the limited app does not reset the count.
  */
 class FocusAccessibilityService : AccessibilityService() {
 
+    companion object {
+        /** Locked while a session runs: uninstalling the app, disabling the
+         *  blocker, or force-stopping it mid-session is not possible. */
+        private val PROTECTED_PACKAGES = setOf(
+            "com.android.settings",                // AOSP / most OEM settings
+            "com.android.packageinstaller",        // uninstall dialogs (AOSP)
+            "com.google.android.packageinstaller", // uninstall dialogs (Pixel+)
+            "com.android.vending",                 // Play Store
+            "com.miui.securitycenter",             // Xiaomi security center
+            "com.samsung.android.lool",            // Samsung device care
+            "com.coloros.safecenter",              // Oppo security center
+            "com.iqoo.secure"                      // Vivo security center
+        )
+    }
+
+    private enum class Mode { FOCUS, PROTECTED, LIMIT }
+
     private var overlay: View? = null
+    private var overlayMode: Mode? = null
     private var countdownText: TextView? = null
     private val handler = Handler(Looper.getMainLooper())
-
-    private val ticker = object : Runnable {
-        override fun run() {
-            if (!SessionStore.isActive(this@FocusAccessibilityService)) {
-                hideOverlay()
-                return
-            }
-            countdownText?.text = formatRemaining(SessionStore.remainingMillis(this@FocusAccessibilityService))
-            handler.postDelayed(this, 1000L)
-        }
-    }
+    private var currentForeground: String? = null
+    private var lastTickMillis = 0L
+    private var launcherPkg: String? = null
+    private var autoHidePending = false
 
     private val autoHide = Runnable {
         autoHidePending = false
         hideOverlay()
     }
 
-    /** Strict multi-window sweep: split-screen, floating windows and PiP
-     *  all appear in [windows]; any blocked package visible => block. */
-    private val monitor = object : Runnable {
+    /** Updates the overlay countdown once a second while it is showing. */
+    private val ticker = object : Runnable {
         override fun run() {
-            if (SessionStore.isActive(this@FocusAccessibilityService)) {
-                if (scanWindowsForBlocked()) {
-                    showOverlay()
-                    performGlobalAction(GLOBAL_ACTION_HOME)
-                } else if (overlay != null && handlerHasNoAutoHide()) {
-                    hideOverlay()
+            val svc = this@FocusAccessibilityService
+            when (overlayMode) {
+                Mode.FOCUS, Mode.PROTECTED -> {
+                    if (!SessionStore.isActive(svc)) {
+                        hideOverlay()
+                        return
+                    }
+                    countdownText?.text = formatRemaining(SessionStore.remainingMillis(svc))
                 }
-                // Active session: tight 500ms sweep for sub-second worst case.
-                handler.postDelayed(this, 500L)
-            } else {
-                hideOverlay()
-                // No session: relax to 2s — near-zero battery cost while idle.
-                handler.postDelayed(this, 2000L)
+                Mode.LIMIT -> countdownText?.text = "Unlocks in ${formatUntilMidnight()}"
+                null -> return
             }
+            handler.postDelayed(this, 1000L)
         }
     }
 
-    private var autoHidePending = false
+    /**
+     * Heartbeat: accumulates foreground time for limited apps and enforces
+     * all three modes, including multi-window (split-screen/floating/PiP).
+     */
+    private val monitor = object : Runnable {
+        override fun run() {
+            val svc = this@FocusAccessibilityService
+            val now = SystemClock.elapsedRealtime()
+            val delta = now - lastTickMillis
+            lastTickMillis = now
 
-    private fun handlerHasNoAutoHide(): Boolean = !autoHidePending
-
-    private fun scanWindowsForBlocked(): Boolean {
-        val blocked = SessionStore.blockedPackages(this)
-        if (blocked.isEmpty()) return false
-        return try {
-            windows.any { w ->
-                val pkg = w.root?.packageName?.toString()
-                pkg != null && pkg != packageName && blocked.contains(pkg)
+            // Usage tracking: count only sane, screen-on intervals so a
+            // doze gap or clock jump can't inflate today's usage.
+            val fg = currentForeground
+            if (fg != null && delta in 1..3999 && isScreenOn()) {
+                AppLimitStore.addUsage(svc, fg, delta)
             }
-        } catch (_: Exception) {
-            false
+
+            val mode = fg?.let { enforcementFor(it) } ?: scanWindows()
+            if (mode != null) {
+                showOverlay(mode)
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                scheduleAutoHide()
+            } else if (overlay != null && !autoHidePending) {
+                hideOverlay()
+            }
+
+            val busy = SessionStore.isActive(svc) || AppLimitStore.hasAnyLimit(svc)
+            handler.postDelayed(this, if (busy) 1000L else 2000L)
         }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        lastTickMillis = SystemClock.elapsedRealtime()
         handler.removeCallbacks(monitor)
         handler.post(monitor)
     }
 
-    private var launcherPkg: String? = null
-
-    private fun isLauncher(pkg: String): Boolean {
-        if (launcherPkg == null) {
-            val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
-                .addCategory(android.content.Intent.CATEGORY_HOME)
-            launcherPkg = packageManager.resolveActivity(intent, 0)
-                ?.activityInfo?.packageName ?: ""
+    /** Why this package must be blocked right now, or null if it's fine. */
+    private fun enforcementFor(pkg: String): Mode? {
+        if (pkg == packageName || pkg == "com.android.systemui" || isLauncher(pkg)) return null
+        if (SessionStore.isActive(this)) {
+            if (PROTECTED_PACKAGES.contains(pkg)) return Mode.PROTECTED
+            if (SessionStore.blockedPackages(this).contains(pkg)) return Mode.FOCUS
         }
-        return pkg == launcherPkg
+        if (AppLimitStore.isExceeded(this, pkg)) return Mode.LIMIT
+        return null
+    }
+
+    /** Sweep every visible window (split-screen, floating, PiP). */
+    private fun scanWindows(): Mode? {
+        return try {
+            windows.firstNotNullOfOrNull { w ->
+                w.root?.packageName?.toString()?.let { enforcementFor(it) }
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (!SessionStore.isActive(this)) {
-            hideOverlay()
-            return
-        }
-
         if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
-            // A window appeared/moved/resized (split-screen, floating, PiP):
-            // sweep everything visible right now.
-            if (scanWindowsForBlocked()) {
-                showOverlay()
+            scanWindows()?.let { mode ->
+                showOverlay(mode)
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 scheduleAutoHide()
             }
@@ -121,25 +159,21 @@ class FocusAccessibilityService : AccessibilityService() {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
 
-        // Ignore our own windows (including the overlay itself) and system UI.
+        // Our own windows (including the overlay) and system UI don't count
+        // as a foreground change.
         if (pkg == packageName || pkg == "com.android.systemui") return
+        currentForeground = pkg
 
-        if (SessionStore.blockedPackages(this).contains(pkg) || scanWindowsForBlocked()) {
+        val mode = enforcementFor(pkg) ?: scanWindows()
+        if (mode != null) {
             // Strict mode: show the block screen AND immediately kick the
-            // user back to the launcher — the blocked app is never usable,
-            // at any window size.
-            showOverlay()
+            // user back to the launcher — never usable, at any size.
+            showOverlay(mode)
             performGlobalAction(GLOBAL_ACTION_HOME)
             scheduleAutoHide()
         } else if (!isLauncher(pkg)) {
             hideOverlay()
         }
-    }
-
-    private fun scheduleAutoHide() {
-        autoHidePending = true
-        handler.removeCallbacks(autoHide)
-        handler.postDelayed(autoHide, 2500L)
     }
 
     override fun onInterrupt() {
@@ -152,8 +186,28 @@ class FocusAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
-    private fun showOverlay() {
-        if (overlay != null) return
+    private fun scheduleAutoHide() {
+        autoHidePending = true
+        handler.removeCallbacks(autoHide)
+        handler.postDelayed(autoHide, 2500L)
+    }
+
+    private fun isLauncher(pkg: String): Boolean {
+        if (launcherPkg == null) {
+            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            launcherPkg = packageManager.resolveActivity(intent, 0)
+                ?.activityInfo?.packageName ?: ""
+        }
+        return pkg == launcherPkg
+    }
+
+    private fun isScreenOn(): Boolean =
+        (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
+
+    private fun showOverlay(mode: Mode) {
+        if (overlay != null && overlayMode == mode) return
+        hideOverlay()
+        overlayMode = mode
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
         // Scrim: deep translucent midnight; the window blur (S+) frosts
@@ -176,7 +230,10 @@ class FocusAccessibilityService : AccessibilityService() {
         }
 
         val title = TextView(this).apply {
-            text = "Focus Mode Active"
+            text = when (mode) {
+                Mode.LIMIT -> "Time's up for today"
+                else -> "Focus Mode Active"
+            }
             textSize = 24f
             setTextColor(Color.parseColor("#F2F3F7"))
             typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
@@ -184,7 +241,13 @@ class FocusAccessibilityService : AccessibilityService() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "This app is blocked until your session ends."
+            text = when (mode) {
+                Mode.PROTECTED ->
+                    "Settings, uninstalling and app stores are locked while focus is active."
+                Mode.LIMIT ->
+                    "You've used today's allowance for this app. See you tomorrow 🌙"
+                Mode.FOCUS -> "This app is blocked until your session ends."
+            }
             textSize = 14f
             setTextColor(Color.parseColor("#9BA0B0"))
             gravity = Gravity.CENTER
@@ -192,8 +255,11 @@ class FocusAccessibilityService : AccessibilityService() {
         }
 
         countdownText = TextView(this).apply {
-            text = formatRemaining(SessionStore.remainingMillis(this@FocusAccessibilityService))
-            textSize = 56f
+            text = when (mode) {
+                Mode.LIMIT -> "Unlocks in ${formatUntilMidnight()}"
+                else -> formatRemaining(SessionStore.remainingMillis(this@FocusAccessibilityService))
+            }
+            textSize = if (mode == Mode.LIMIT) 28f else 56f
             setTextColor(Color.parseColor("#F6DFA0"))
             typeface = Typeface.create("sans-serif-thin", Typeface.NORMAL)
             gravity = Gravity.CENTER
@@ -203,7 +269,7 @@ class FocusAccessibilityService : AccessibilityService() {
 
         // Glossy gold pill button
         val button = TextView(this).apply {
-            text = "Return to focus"
+            text = if (mode == Mode.LIMIT) "Okay" else "Return to focus"
             textSize = 16f
             setTextColor(Color.parseColor("#07080F"))
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -258,9 +324,11 @@ class FocusAccessibilityService : AccessibilityService() {
         try {
             wm.addView(root, params)
             overlay = root
+            handler.removeCallbacks(ticker)
             handler.post(ticker)
         } catch (_: Exception) {
             overlay = null
+            overlayMode = null
         }
     }
 
@@ -275,6 +343,7 @@ class FocusAccessibilityService : AccessibilityService() {
             }
         }
         overlay = null
+        overlayMode = null
         countdownText = null
     }
 
@@ -284,6 +353,20 @@ class FocusAccessibilityService : AccessibilityService() {
         val s = TimeUnit.MILLISECONDS.toSeconds(millis) % 60
         return if (h > 0) String.format("%d:%02d:%02d", h, m, s)
         else String.format("%02d:%02d", m, s)
+    }
+
+    private fun formatUntilMidnight(): String {
+        val midnight = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val millis = midnight.timeInMillis - System.currentTimeMillis()
+        val h = TimeUnit.MILLISECONDS.toHours(millis)
+        val m = TimeUnit.MILLISECONDS.toMinutes(millis) % 60
+        return if (h > 0) "${h}h ${m}m" else "${m}m"
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
