@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
     <application
+        android:allowBackup="true"
+        android:fullBackupContent="true"
         android:label="minimalist"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
