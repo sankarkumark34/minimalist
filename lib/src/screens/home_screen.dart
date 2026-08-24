@@ -21,8 +21,11 @@ Future<void> _pickCustom(
     BuildContext context, WidgetRef ref, int current) async {
   var hours = (current ~/ 60).clamp(0, 24);
   var mins = current % 60;
+  final hoursCtl = TextEditingController(text: '$hours');
+  final minsCtl = TextEditingController(text: '$mins');
   final picked = await showModalBottomSheet<int>(
     context: context,
+    isScrollControlled: true,
     backgroundColor: const Color(0xF0141728),
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -31,8 +34,15 @@ Future<void> _pickCustom(
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSheet) {
         final total = (hours * 60 + mins).clamp(0, 1440);
+
+        void syncFields() {
+          hoursCtl.text = '$hours';
+          minsCtl.text = '$mins';
+        }
+
         return Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+          padding: EdgeInsets.fromLTRB(
+              24, 24, 24, 24 + MediaQuery.of(ctx).viewInsets.bottom),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -49,12 +59,34 @@ Future<void> _pickCustom(
                 style: const TextStyle(fontSize: 13, color: AppColors.inkDim),
               ),
               const SizedBox(height: 20),
-              Text(total == 0 ? '0' : _fmtDuration(total),
-                  style: const TextStyle(
-                      fontSize: 44,
-                      fontWeight: FontWeight.w200,
-                      color: AppColors.accentBright)),
-              const SizedBox(height: 12),
+              // Type it in directly — sliders below stay in sync.
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _TimeField(
+                    controller: hoursCtl,
+                    label: 'hours',
+                    max: 24,
+                    onChanged: (v) => setSheet(() => hours = v),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(':',
+                        style: TextStyle(
+                            fontSize: 40,
+                            fontWeight: FontWeight.w200,
+                            color: AppColors.inkDim)),
+                  ),
+                  _TimeField(
+                    controller: minsCtl,
+                    label: 'minutes',
+                    max: 59,
+                    onChanged: (v) => setSheet(() => mins = v),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   const SizedBox(
@@ -70,7 +102,10 @@ Future<void> _pickCustom(
                       activeColor: AppColors.accent,
                       inactiveColor: AppColors.glassBorder,
                       label: '${hours}h',
-                      onChanged: (v) => setSheet(() => hours = v.round()),
+                      onChanged: (v) => setSheet(() {
+                        hours = v.round();
+                        syncFields();
+                      }),
                     ),
                   ),
                 ],
@@ -85,12 +120,15 @@ Future<void> _pickCustom(
                     child: Slider(
                       value: mins.toDouble(),
                       min: 0,
-                      max: 55,
-                      divisions: 11,
+                      max: 59,
+                      divisions: 59,
                       activeColor: AppColors.accent,
                       inactiveColor: AppColors.glassBorder,
                       label: '${mins}m',
-                      onChanged: (v) => setSheet(() => mins = v.round()),
+                      onChanged: (v) => setSheet(() {
+                        mins = v.round();
+                        syncFields();
+                      }),
                     ),
                   ),
                 ],
@@ -110,11 +148,70 @@ Future<void> _pickCustom(
       },
     ),
   );
+  hoursCtl.dispose();
+  minsCtl.dispose();
   if (picked != null && picked > 0) {
     ref.read(durationProvider.notifier).set(picked);
   }
 }
 
+/// Glass number field for typing hours/minutes directly.
+class _TimeField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final int max;
+  final ValueChanged<int> onChanged;
+
+  const _TimeField({
+    required this.controller,
+    required this.label,
+    required this.max,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 96,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [AppColors.glassFillHigh, AppColors.glassFill],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.glassBorder),
+          ),
+          child: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.center,
+            maxLength: 2,
+            style: const TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.w200,
+                color: AppColors.accentBright),
+            decoration: const InputDecoration(
+              counterText: '',
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(vertical: 10),
+            ),
+            onChanged: (v) {
+              final parsed = (int.tryParse(v) ?? 0).clamp(0, max);
+              onChanged(parsed);
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 12, letterSpacing: 1, color: AppColors.inkDim)),
+      ],
+    );
+  }
+}
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
