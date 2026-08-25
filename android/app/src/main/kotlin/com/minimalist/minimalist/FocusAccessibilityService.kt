@@ -66,6 +66,32 @@ class FocusAccessibilityService : AccessibilityService() {
         hideOverlay()
     }
 
+    /** Keyboards fire window-state events too; they must never be treated
+     *  as the foreground app or usage attribution breaks. */
+    private val imePackages: Set<String> by lazy {
+        try {
+            (getSystemService(INPUT_METHOD_SERVICE)
+                as android.view.inputmethod.InputMethodManager)
+                .inputMethodList.map { it.packageName }.toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
+    }
+
+    /** The app that actually has window focus right now — robust against
+     *  keyboards, dialogs and transient system windows, unlike the last
+     *  accessibility event's package. */
+    private fun focusedPackage(): String? {
+        return try {
+            windows.firstOrNull { it.isFocused }
+                ?.root?.packageName?.toString()
+                ?.takeIf { it != packageName && it != "com.android.systemui" }
+                ?: currentForeground
+        } catch (_: Exception) {
+            currentForeground
+        }
+    }
+
     /** Updates the overlay countdown once a second while it is showing. */
     private val ticker = object : Runnable {
         override fun run() {
@@ -98,7 +124,8 @@ class FocusAccessibilityService : AccessibilityService() {
 
             // Usage tracking: count only sane, screen-on intervals so a
             // doze gap or clock jump can't inflate today's usage.
-            val fg = currentForeground
+            val fg = focusedPackage()
+            if (fg != null) currentForeground = fg
             if (fg != null && delta in 1..3999 && isScreenOn()) {
                 AppLimitStore.addUsage(svc, fg, delta)
             }
@@ -162,6 +189,7 @@ class FocusAccessibilityService : AccessibilityService() {
         // Our own windows (including the overlay) and system UI don't count
         // as a foreground change.
         if (pkg == packageName || pkg == "com.android.systemui") return
+        if (imePackages.contains(pkg)) return
         currentForeground = pkg
 
         val mode = enforcementFor(pkg) ?: scanWindows()
