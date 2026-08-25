@@ -39,7 +39,7 @@ class GlassPanel extends StatelessWidget {
                 end: Alignment.bottomRight,
                 colors: high
                     ? [AppColors.glassFillHigh, AppColors.glassFill]
-                    : [AppColors.glassFill, const Color(0x0AFFFFFF)],
+                    : [AppColors.glassFill, const Color(0x14FFFFFF)],
               ),
               border: Border.all(color: AppColors.glassBorder, width: 1),
             ),

@@ -77,7 +77,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xF01A1D2E),
+        backgroundColor: const Color(0xF02760C2),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
           side: const BorderSide(color: AppColors.glassBorder),

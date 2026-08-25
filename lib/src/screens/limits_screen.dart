@@ -26,7 +26,7 @@ class _LimitsScreenState extends ConsumerState<LimitsScreen> {
     var minutes = currentLimit ?? 30;
     final result = await showModalBottomSheet<int>(
       context: context,
-      backgroundColor: const Color(0xF0141728),
+      backgroundColor: const Color(0xF02760C2),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         side: BorderSide(color: AppColors.glassBorder),

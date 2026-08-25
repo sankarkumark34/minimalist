@@ -109,7 +109,7 @@ class StatsScreen extends ConsumerWidget {
                       gridData: const FlGridData(show: false),
                       barTouchData: BarTouchData(
                         touchTooltipData: BarTouchTooltipData(
-                          getTooltipColor: (_) => const Color(0xE61F2233),
+                          getTooltipColor: (_) => const Color(0xE62B63C4),
                           getTooltipItem: (group, _, rod, indexInGroup) =>
                               BarTooltipItem(
                             _fmtHours(rod.toY.round()),

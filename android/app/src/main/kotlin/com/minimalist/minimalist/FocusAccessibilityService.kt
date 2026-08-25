@@ -240,7 +240,7 @@ class FocusAccessibilityService : AccessibilityService() {
 
         // Scrim: deep translucent midnight; the window blur (S+) frosts
         // whatever the blocked app was showing underneath.
-        val root = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#E60B0D18")) }
+        val root = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#E61D55B8")) }
 
         // Frosted glass card
         val card = LinearLayout(this).apply {
@@ -249,10 +249,10 @@ class FocusAccessibilityService : AccessibilityService() {
             setPadding(dp(32), dp(40), dp(32), dp(40))
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor("#1FFFFFFF"), Color.parseColor("#0AFFFFFF"))
+                intArrayOf(Color.parseColor("#33FFFFFF"), Color.parseColor("#14FFFFFF"))
             ).apply {
                 cornerRadius = dp(28).toFloat()
-                setStroke(dp(1), Color.parseColor("#2EFFFFFF"))
+                setStroke(dp(1), Color.parseColor("#59FFFFFF"))
             }
             clipToOutline = true
         }
@@ -263,7 +263,7 @@ class FocusAccessibilityService : AccessibilityService() {
                 else -> "Focus Mode Active"
             }
             textSize = 24f
-            setTextColor(Color.parseColor("#F2F3F7"))
+            setTextColor(Color.parseColor("#FFFFFF"))
             typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
             gravity = Gravity.CENTER
         }
@@ -277,7 +277,7 @@ class FocusAccessibilityService : AccessibilityService() {
                 Mode.FOCUS -> "This app is blocked until your session ends."
             }
             textSize = 14f
-            setTextColor(Color.parseColor("#9BA0B0"))
+            setTextColor(Color.parseColor("#D3E4F8"))
             gravity = Gravity.CENTER
             setPadding(0, dp(12), 0, dp(32))
         }
@@ -288,31 +288,31 @@ class FocusAccessibilityService : AccessibilityService() {
                 else -> formatRemaining(SessionStore.remainingMillis(this@FocusAccessibilityService))
             }
             textSize = if (mode == Mode.LIMIT) 28f else 56f
-            setTextColor(Color.parseColor("#F6DFA0"))
+            setTextColor(Color.parseColor("#FFFFFF"))
             typeface = Typeface.create("sans-serif-thin", Typeface.NORMAL)
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, dp(40))
-            setShadowLayer(24f, 0f, 0f, Color.parseColor("#66E8C36A"))
+            setShadowLayer(24f, 0f, 0f, Color.parseColor("#66FFFFFF"))
         }
 
         // Glossy gold pill button
         val button = TextView(this).apply {
             text = if (mode == Mode.LIMIT) "Okay" else "Return to focus"
             textSize = 16f
-            setTextColor(Color.parseColor("#07080F"))
+            setTextColor(Color.parseColor("#1D55B8"))
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             gravity = Gravity.CENTER
             setPadding(dp(36), dp(16), dp(36), dp(16))
             background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 intArrayOf(
-                    Color.parseColor("#F6DFA0"),
-                    Color.parseColor("#E8C36A"),
-                    Color.parseColor("#C99B3F")
+                    Color.parseColor("#FFFFFF"),
+                    Color.parseColor("#D9E9FB"),
+                    Color.parseColor("#AECBF0")
                 )
             ).apply {
                 cornerRadius = dp(30).toFloat()
-                setStroke(dp(1), Color.parseColor("#8CF6DFA0"))
+                setStroke(dp(1), Color.parseColor("#B3FFFFFF"))
             }
             elevation = dp(8).toFloat()
             setOnClickListener {
