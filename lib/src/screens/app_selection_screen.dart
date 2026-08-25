@@ -127,7 +127,7 @@ class _AppRow extends ConsumerWidget {
           end: Alignment.bottomRight,
           colors: isBlocked
               ? [AppColors.accent.withAlpha(31), AppColors.glassFill]
-              : [AppColors.glassFill, const Color(0x0AFFFFFF)],
+              : [AppColors.glassFill, const Color(0x14FFFFFF)],
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(

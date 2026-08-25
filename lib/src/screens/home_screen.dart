@@ -10,6 +10,13 @@ import '../theme.dart';
 
 const _durations = [10, 15, 25, 45, 60, 90, 120];
 
+String _greeting() {
+  final h = DateTime.now().hour;
+  if (h < 12) return 'Good morning,';
+  if (h < 17) return 'Good afternoon,';
+  return 'Good evening,';
+}
+
 String _fmtDuration(int minutes) {
   if (minutes < 60) return '$minutes';
   final h = minutes ~/ 60;
@@ -26,7 +33,7 @@ Future<void> _pickCustom(
   final picked = await showModalBottomSheet<int>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xF0141728),
+    backgroundColor: const Color(0xF02760C2),
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       side: BorderSide(color: AppColors.glassBorder),
@@ -258,7 +265,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _pickSound() async {
     final choice = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: const Color(0xF0141728),
+      backgroundColor: const Color(0xF02760C2),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         side: BorderSide(color: AppColors.glassBorder),
@@ -317,7 +324,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final go = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xF01A1D2E),
+          backgroundColor: const Color(0xF02760C2),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
             side: const BorderSide(color: AppColors.glassBorder),
@@ -387,17 +394,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 32),
-              ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [AppColors.ink, AppColors.inkDim],
-                ).createShader(bounds),
-                child: const Text('minimalist',
-                    style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w300,
-                        letterSpacing: 4,
-                        color: Colors.white)),
-              ),
+              Text(_greeting(),
+                  style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.inkDim)),
+              const Text('Ready to focus?',
+                  style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.ink)),
               const Spacer(),
               Center(
                 child: GlassPanel(

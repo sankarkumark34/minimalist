@@ -1,37 +1,37 @@
 import 'package:flutter/material.dart';
 
-/// Liquid-glass palette — deep midnight canvas with cool depth lighting,
-/// translucent frosted surfaces, and a polished gold accent.
+/// Azure liquid-glass palette — vivid blue canvas with soft ambient blobs,
+/// bright white frosted surfaces, glossy white-glass accents.
 abstract final class AppColors {
-  // Canvas depth gradient
-  static const bgTop = Color(0xFF101322);
-  static const bgMid = Color(0xFF0B0D18);
-  static const bgBottom = Color(0xFF07080F);
+  // Canvas depth gradient (light azure -> deep azure)
+  static const bgTop = Color(0xFF6FA8EC);
+  static const bgMid = Color(0xFF3273D9);
+  static const bgBottom = Color(0xFF1D55B8);
 
-  // Ambient glow orbs behind the glass
-  static const glowGold = Color(0x33E8C36A);
-  static const glowBlue = Color(0x2E5B7FE8);
-  static const glowViolet = Color(0x268B5BE8);
+  // Ambient glow blobs behind the glass
+  static const glowPeach = Color(0x59F5CDB0);
+  static const glowSky = Color(0x66C9E2FA);
+  static const glowDeep = Color(0x40123E8F);
 
-  // Glass surfaces
-  static const glassFill = Color(0x14FFFFFF); // 8% white
-  static const glassFillHigh = Color(0x1FFFFFFF); // 12% white
-  static const glassBorder = Color(0x2EFFFFFF); // 18% white
-  static const glassSheen = Color(0x40FFFFFF); // top edge highlight
+  // Glass surfaces (white frost on blue)
+  static const glassFill = Color(0x24FFFFFF); // 14% white
+  static const glassFillHigh = Color(0x38FFFFFF); // 22% white
+  static const glassBorder = Color(0x59FFFFFF); // 35% white
+  static const glassSheen = Color(0x8CFFFFFF); // top edge highlight
 
   // Ink
-  static const ink = Color(0xFFF2F3F7);
-  static const inkDim = Color(0xFF9BA0B0);
-  static const inkFaint = Color(0xFF565B6E);
+  static const ink = Colors.white;
+  static const inkDim = Color(0xFFD3E4F8);
+  static const inkFaint = Color(0xFF9DBCE8);
 
-  // Accent: polished gold
-  static const accent = Color(0xFFE8C36A);
-  static const accentBright = Color(0xFFF6DFA0);
-  static const accentDeep = Color(0xFFC99B3F);
-  static const danger = Color(0xFFE86A6A);
+  // Accent: polished white glass
+  static const accent = Color(0xFFEAF3FF);
+  static const accentBright = Color(0xFFFFFFFF);
+  static const accentDeep = Color(0xFFB9D4F3);
+  static const danger = Color(0xFFFF9E8F);
 }
 
-/// Full-bleed background: vertical depth gradient with soft glow orbs,
+/// Full-bleed background: azure depth gradient with soft glow blobs,
 /// so the frosted glass panels have something to refract.
 class LiquidBackground extends StatelessWidget {
   final Widget child;
@@ -43,8 +43,8 @@ class LiquidBackground extends StatelessWidget {
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
           colors: [AppColors.bgTop, AppColors.bgMid, AppColors.bgBottom],
         ),
       ),
@@ -53,18 +53,18 @@ class LiquidBackground extends StatelessWidget {
         children: [
           const Positioned(
             top: -120,
-            right: -80,
-            child: _GlowOrb(color: AppColors.glowGold, size: 340),
+            left: -100,
+            child: _GlowOrb(color: AppColors.glowSky, size: 420),
           ),
           const Positioned(
-            top: 260,
-            left: -140,
-            child: _GlowOrb(color: AppColors.glowBlue, size: 380),
+            bottom: -140,
+            left: -120,
+            child: _GlowOrb(color: AppColors.glowPeach, size: 400),
           ),
           const Positioned(
-            bottom: -160,
-            right: -60,
-            child: _GlowOrb(color: AppColors.glowViolet, size: 360),
+            top: 220,
+            right: -160,
+            child: _GlowOrb(color: AppColors.glowDeep, size: 420),
           ),
           child,
         ],
@@ -121,7 +121,7 @@ ThemeData buildTheme() {
     switchTheme: SwitchThemeData(
       trackColor: WidgetStateProperty.resolveWith((states) =>
           states.contains(WidgetState.selected)
-              ? AppColors.accent
+              ? AppColors.accentBright
               : AppColors.glassFill),
       trackOutlineColor: WidgetStateProperty.resolveWith((states) =>
           states.contains(WidgetState.selected)
@@ -134,7 +134,7 @@ ThemeData buildTheme() {
     ),
     dividerTheme: const DividerThemeData(color: AppColors.glassBorder),
     snackBarTheme: const SnackBarThemeData(
-      backgroundColor: Color(0xE61F2233),
+      backgroundColor: Color(0xE62B63C4),
       contentTextStyle: TextStyle(color: AppColors.ink),
       behavior: SnackBarBehavior.floating,
     ),
