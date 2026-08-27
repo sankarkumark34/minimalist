@@ -1,6 +1,9 @@
 package com.minimalist.minimalist
 
 import android.accessibilityservice.AccessibilityService
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -14,6 +17,7 @@ import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.OvershootInterpolator
 import android.view.accessibility.AccessibilityEvent
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -55,6 +59,7 @@ class FocusAccessibilityService : AccessibilityService() {
     private var overlay: View? = null
     private var overlayMode: Mode? = null
     private var countdownText: TextView? = null
+    private var pulseAnimator: ObjectAnimator? = null
     private val handler = Handler(Looper.getMainLooper())
     private var currentForeground: String? = null
     private var lastTickMillis = 0L
@@ -63,7 +68,7 @@ class FocusAccessibilityService : AccessibilityService() {
 
     private val autoHide = Runnable {
         autoHidePending = false
-        hideOverlay()
+        hideOverlay(animate = true)
     }
 
     /** Keyboards fire window-state events too; they must never be treated
@@ -217,7 +222,9 @@ class FocusAccessibilityService : AccessibilityService() {
     private fun scheduleAutoHide() {
         autoHidePending = true
         handler.removeCallbacks(autoHide)
-        handler.postDelayed(autoHide, 2500L)
+        // Long enough to land and read — the card animates in, breathes,
+        // then dissolves instead of blinking away.
+        handler.postDelayed(autoHide, 5000L)
     }
 
     private fun isLauncher(pkg: String): Boolean {
@@ -255,6 +262,18 @@ class FocusAccessibilityService : AccessibilityService() {
                 setStroke(dp(1), Color.parseColor("#59FFFFFF"))
             }
             clipToOutline = true
+        }
+
+        // Big friendly emoji with a gentle breathing pulse.
+        val emoji = TextView(this).apply {
+            text = when (mode) {
+                Mode.LIMIT -> "🌙"
+                Mode.PROTECTED -> "🔒"
+                Mode.FOCUS -> "🧘"
+            }
+            textSize = 44f
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(10))
         }
 
         val title = TextView(this).apply {
@@ -317,10 +336,11 @@ class FocusAccessibilityService : AccessibilityService() {
             elevation = dp(8).toFloat()
             setOnClickListener {
                 performGlobalAction(GLOBAL_ACTION_HOME)
-                hideOverlay()
+                hideOverlay(animate = true)
             }
         }
 
+        card.addView(emoji)
         card.addView(title)
         card.addView(subtitle)
         card.addView(countdownText)
@@ -349,9 +369,37 @@ class FocusAccessibilityService : AccessibilityService() {
             params.blurBehindRadius = dp(24)
         }
 
+        // Entrance: scrim fades in while the card floats up with a soft
+        // overshoot — a moment to breathe instead of a jarring flash.
+        root.alpha = 0f
+        card.alpha = 0f
+        card.scaleX = 0.85f
+        card.scaleY = 0.85f
+        card.translationY = dp(32).toFloat()
+
         try {
             wm.addView(root, params)
             overlay = root
+            root.animate().alpha(1f).setDuration(280L).start()
+            card.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .translationY(0f)
+                .setStartDelay(90L)
+                .setDuration(450L)
+                .setInterpolator(OvershootInterpolator(1.1f))
+                .start()
+            pulseAnimator = ObjectAnimator.ofPropertyValuesHolder(
+                emoji,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.14f),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.14f)
+            ).apply {
+                duration = 1200L
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                start()
+            }
             handler.removeCallbacks(ticker)
             handler.post(ticker)
         } catch (_: Exception) {
@@ -360,19 +408,31 @@ class FocusAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun hideOverlay() {
+    private fun hideOverlay(animate: Boolean = false) {
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(autoHide)
         autoHidePending = false
-        overlay?.let {
-            try {
-                (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it)
-            } catch (_: Exception) {
-            }
-        }
+        pulseAnimator?.cancel()
+        pulseAnimator = null
+        val view = overlay
         overlay = null
         overlayMode = null
         countdownText = null
+        if (view == null) return
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val remove = {
+            try {
+                wm.removeView(view)
+            } catch (_: Exception) {
+            }
+        }
+        if (animate) {
+            // Gentle dissolve on the way out.
+            view.animate().alpha(0f).setDuration(300L)
+                .withEndAction(remove).start()
+        } else {
+            remove()
+        }
     }
 
     private fun formatRemaining(millis: Long): String {

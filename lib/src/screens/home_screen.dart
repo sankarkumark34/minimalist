@@ -357,11 +357,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     final minutes = ref.read(durationProvider);
-    final blocked = ref.read(blockedAppsProvider);
+    // Individually chosen apps plus every app in each selected group.
+    final blocked = ref.read(focusPackagesProvider);
     if (blocked.isEmpty) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Choose at least one app to block first')));
+          content:
+              Text('Choose apps or select a group to block first')));
       return;
     }
     await FocusChannel.startFocusSession(
@@ -380,6 +382,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final minutes = ref.watch(durationProvider);
     final blocked = ref.watch(blockedAppsProvider);
+    final groups = ref.watch(groupsProvider);
+    final selectedGroups = ref.watch(selectedGroupsProvider);
     final history = ref.watch(historyProvider);
     final totalFocused = history
         .where((r) => r.completed)
@@ -474,6 +478,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         style: const TextStyle(
                             fontSize: 15, color: AppColors.ink),
                       ),
+                    ),
+                    const Icon(Icons.chevron_right,
+                        size: 20, color: AppColors.inkFaint),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              GlassPanel(
+                radius: 18,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                onTap: () => context.push('/groups'),
+                child: Row(
+                  children: [
+                    const Icon(Icons.folder_copy_outlined,
+                        size: 20, color: AppColors.accent),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Builder(builder: (_) {
+                        final active = groups
+                            .where((g) => selectedGroups.contains(g.id))
+                            .toList();
+                        return Text(
+                          active.isEmpty
+                              ? 'App groups'
+                              : 'Focusing ${active.map((g) => '${g.emoji} ${g.name}').join(', ')}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 15, color: AppColors.ink),
+                        );
+                      }),
                     ),
                     const Icon(Icons.chevron_right,
                         size: 20, color: AppColors.inkFaint),

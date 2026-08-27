@@ -15,6 +15,58 @@ class AppInfo {
       );
 }
 
+/// A named collection of apps ("Social Media", "Entertainment"...) that can
+/// be focused as one unit, or given a per-app daily quota in one step.
+class AppGroup {
+  final String id;
+  final String name;
+  final String emoji;
+  final List<String> packages;
+
+  /// Daily allowance in minutes applied to EACH app in the group
+  /// individually (not a shared pool), or null for no limit.
+  final int? limitMinutes;
+
+  const AppGroup({
+    required this.id,
+    required this.name,
+    this.emoji = '📱',
+    this.packages = const [],
+    this.limitMinutes,
+  });
+
+  AppGroup copyWith({
+    String? name,
+    String? emoji,
+    List<String>? packages,
+    int? limitMinutes,
+    bool clearLimit = false,
+  }) =>
+      AppGroup(
+        id: id,
+        name: name ?? this.name,
+        emoji: emoji ?? this.emoji,
+        packages: packages ?? this.packages,
+        limitMinutes: clearLimit ? null : (limitMinutes ?? this.limitMinutes),
+      );
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'name': name,
+        'emoji': emoji,
+        'packages': packages,
+        'limitMinutes': limitMinutes,
+      };
+
+  factory AppGroup.fromMap(Map<dynamic, dynamic> m) => AppGroup(
+        id: m['id'] as String,
+        name: m['name'] as String? ?? '',
+        emoji: m['emoji'] as String? ?? '📱',
+        packages: (m['packages'] as List?)?.cast<String>() ?? const [],
+        limitMinutes: m['limitMinutes'] as int?,
+      );
+}
+
 class SessionRecord {
   final DateTime start;
   final int durationMinutes;
